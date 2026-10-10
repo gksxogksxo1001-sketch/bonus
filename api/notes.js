@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
@@ -25,7 +26,7 @@ export default async function handler(request, response) {
     return response.status(500).json({ error: 'Supabase environment variables are missing.' });
   }
 
-  // 브라우저가 전달한 userId, role 등은 일체 신뢰하지 않고 오직 Authorization 헤더 토큰만 검증
+  // 브라우저가 전달한 임의의 userId, role 등은 신뢰하지 않고 오직 Authorization 헤더 토큰만 검증
   const authorization = request.headers['authorization'] || request.headers['Authorization'];
   if (!authorization) {
     return response.status(401).json({ error: 'Unauthorized: missing authorization token' });
@@ -39,20 +40,114 @@ export default async function handler(request, response) {
     return response.status(500).json({ error: 'Internal verifier error' });
   }
 
-  if (!verified) {
+  if (!verified || !verified.userId) {
     return response.status(401).json({ error: 'Unauthorized: invalid or expired token' });
   }
 
   const supabase = createClient(supabaseUrl, supabaseSecretKey);
 
-  try {
-    const { data, error } = await supabase.from('notes').select('title, content');
-    if (error) {
-      return response.status(500).json({ error: 'Failed to fetch notes.' });
-    }
-    return response.status(200).json({ sampleMarker: config.sampleMarker || 'SAMPLE_NOTE_1', notes: data });
-  } catch (err) {
-    return response.status(500).json({ error: 'Internal server error.' });
-  }
-}
+  // 요청 ID 추출 (Vercel rewrite query 파라미터 또는 URL pathname)
+  const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  const pathId = request.query?.id || (pathSegments.length >= 3 ? pathSegments[2] : null);
 
+  const method = request.method?.toUpperCase();
+
+  // 1. GET 요청
+  if (method === 'GET') {
+    if (pathId) {
+      // 한 건 GET 응답: { id, title, body } (삭제되거나 없으면 404)
+      const { data, error } = await supabase
+        .from('notes')
+        .select('id, title, content')
+        .eq('id', pathId)
+        .maybeSingle();
+
+      if (error) return response.status(500).json({ error: error.message });
+      if (!data) return response.status(404).json({ error: 'Note not found' });
+
+      return response.status(200).json({ id: data.id, title: data.title, body: data.content });
+    }
+
+    // 목록 GET: 로그인 사용자의 메모 배열
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, title, content')
+      .order('created_at', { ascending: true });
+
+    if (error) return response.status(500).json({ error: 'Failed to fetch notes.' });
+
+    const notes = (data || []).map(r => ({ id: r.id, title: r.title, body: r.content }));
+    return response.status(200).json(notes);
+  }
+
+  // 2. POST 요청: 가상 메모 추가
+  if (method === 'POST') {
+    let payload = request.body;
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch { payload = {}; }
+    }
+    payload = payload || {};
+
+    const id = payload.id || randomUUID();
+    const title = payload.title || '';
+    const content = payload.body ?? payload.content ?? '';
+
+    // 서버가 확인한 사용자 ID를 owner_id로 저장
+    const { error } = await supabase.from('notes').insert({
+      id,
+      owner_id: verified.userId,
+      title,
+      content,
+    });
+
+    if (error) return response.status(500).json({ error: error.message });
+    return response.status(201).json({ id });
+  }
+
+  // 3. PUT 요청: 메모 수정
+  if (method === 'PUT') {
+    if (!pathId) return response.status(400).json({ error: 'Missing note id' });
+
+    let payload = request.body;
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch { payload = {}; }
+    }
+    payload = payload || {};
+
+    const updates = {};
+    if (payload.title !== undefined) updates.title = payload.title;
+    if (payload.body !== undefined || payload.content !== undefined) {
+      updates.content = payload.body ?? payload.content;
+    }
+
+    // 3단계에서는 아직 소유자 검사를 하지 않으므로 id로만 수정
+    const { data, error } = await supabase
+      .from('notes')
+      .update(updates)
+      .eq('id', pathId)
+      .select('id, title, content')
+      .maybeSingle();
+
+    if (error) return response.status(500).json({ error: error.message });
+    if (!data) return response.status(404).json({ error: 'Note not found' });
+
+    return response.status(200).json({ id: data.id, title: data.title, body: data.content });
+  }
+
+  // 4. DELETE 요청: 메모 삭제
+  if (method === 'DELETE') {
+    if (!pathId) return response.status(400).json({ error: 'Missing note id' });
+
+    // 3단계에서는 아직 소유자 검사를 하지 않으므로 id로만 삭제
+    const { error } = await supabase
+      .from('notes')
+      .delete()
+      .eq('id', pathId);
+
+    if (error) return response.status(500).json({ error: error.message });
+    return response.status(200).json({ success: true, id: pathId });
+  }
+
+  return response.status(405).json({ error: 'Method Not Allowed' });
+}

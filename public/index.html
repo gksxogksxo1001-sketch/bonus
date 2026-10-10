@@ -28,7 +28,15 @@
     .btn-secondary { background: #374151; color: #f3f4f6; }
     .btn-secondary:hover { background: #4b5563; }
     .auth-error { margin-top: 10px; color: #f87171; font-size: 14px; }
-    .auth-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .auth-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .note-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .btn-danger { background: #b91c1c; color: #fff; }
+    .btn-danger:hover { background: #991b1b; }
+    .btn-edit { background: #0284c7; color: #fff; }
+    .btn-edit:hover { background: #0369a1; }
+    .add-note-card { padding: 18px; border: 1px dashed #4a627d; border-radius: 12px; background: #131e2d; }
+    .add-note-card h3 { margin: 0 0 12px; font-size: 16px; color: #ecf4ff; }
   </style>
 </head>
 <body>
@@ -62,6 +70,21 @@
           </div>
           <button type="button" class="btn btn-secondary" id="logout-btn">로그아웃</button>
         </div>
+
+        <div class="add-note-card">
+          <h3>새 가상 메모 추가</h3>
+          <form id="add-note-form" class="auth-form">
+            <label>
+              제목
+              <input type="text" id="new-note-title" required placeholder="메모 제목">
+            </label>
+            <label>
+              내용
+              <input type="text" id="new-note-body" required placeholder="메모 내용">
+            </label>
+            <button type="submit" class="btn btn-primary" id="add-note-btn">메모 추가</button>
+          </form>
+        </div>
       </div>
     </section>
 
@@ -82,8 +105,14 @@
     const authError = document.querySelector('#auth-error');
     const userDisplay = document.querySelector('#user-display');
     const logoutBtn = document.querySelector('#logout-btn');
+    const addNoteForm = document.querySelector('#add-note-form');
+    const newNoteTitle = document.querySelector('#new-note-title');
+    const newNoteBody = document.querySelector('#new-note-body');
+
+    let currentToken = null;
 
     async function loadNotes(token) {
+      currentToken = token;
       const list = document.querySelector('#notes');
       if (!token) {
         const item = document.createElement('li');
@@ -101,14 +130,70 @@
         });
         if (!response.ok) throw new Error('자료를 읽을 수 없습니다 (인증 필요).');
         const data = await response.json();
-        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        list.replaceChildren(...data.notes.map(note => {
+        const notes = Array.isArray(data) ? data : (data.notes || []);
+        if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        if (notes.length === 0) {
+          const item = document.createElement('li');
+          item.textContent = '등록된 가상 메모가 없습니다.';
+          list.replaceChildren(item);
+          return;
+        }
+        list.replaceChildren(...notes.map(note => {
           const item = document.createElement('li');
           const title = document.createElement('strong');
           const content = document.createElement('span');
           title.textContent = note.title;
-          content.textContent = note.content;
-          item.append(title, content);
+          content.textContent = note.body ?? note.content ?? '';
+
+          const actions = document.createElement('div');
+          actions.className = 'note-actions';
+
+          const editBtn = document.createElement('button');
+          editBtn.type = 'button';
+          editBtn.className = 'btn btn-edit btn-sm';
+          editBtn.textContent = '수정';
+          editBtn.addEventListener('click', async () => {
+            const newTitle = prompt('수정할 제목:', note.title);
+            if (newTitle === null) return;
+            const newBody = prompt('수정할 내용:', note.body ?? note.content ?? '');
+            if (newBody === null) return;
+
+            const res = await fetch(`/api/notes/${note.id}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${currentToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ title: newTitle, body: newBody })
+            });
+            if (res.ok) {
+              loadNotes(currentToken);
+            } else {
+              alert('메모 수정에 실패했습니다.');
+            }
+          });
+
+          const deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'btn btn-danger btn-sm';
+          deleteBtn.textContent = '삭제';
+          deleteBtn.addEventListener('click', async () => {
+            if (!confirm(`'${note.title}' 메모를 삭제하시겠습니까?`)) return;
+            const res = await fetch(`/api/notes/${note.id}`, {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${currentToken}`
+              }
+            });
+            if (res.ok) {
+              loadNotes(currentToken);
+            } else {
+              alert('메모 삭제에 실패했습니다.');
+            }
+          });
+
+          actions.append(editBtn, deleteBtn);
+          item.append(title, content, actions);
           return item;
         }));
       } catch (error) {
@@ -160,6 +245,32 @@
       const { error } = await supabase.auth.signOut();
       if (error) {
         alert(`로그아웃 오류: ${error.message}`);
+      }
+    });
+
+    addNoteForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentToken) return;
+
+      const title = newNoteTitle.value.trim();
+      const body = newNoteBody.value.trim();
+      if (!title || !body) return;
+
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${currentToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ title, body })
+      });
+
+      if (res.ok) {
+        newNoteTitle.value = '';
+        newNoteBody.value = '';
+        loadNotes(currentToken);
+      } else {
+        alert('메모 추가에 실패했습니다.');
       }
     });
 
