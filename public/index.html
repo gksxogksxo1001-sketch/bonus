@@ -16,6 +16,19 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; }
+    .auth-card { margin: 24px 0; padding: 20px; border: 1px solid #3b5068; border-radius: 14px; background: #162436; }
+    .auth-card h2 { margin: 0 0 14px; font-size: 18px; color: #ecf4ff; }
+    .auth-form { display: grid; gap: 12px; }
+    .auth-form label { display: grid; gap: 6px; font-size: 14px; color: #bfd0e5; }
+    .auth-form input { padding: 10px 12px; border-radius: 8px; border: 1px solid #4a627d; background: #0c1521; color: #ecf4ff; font-size: 15px; }
+    .auth-form input:focus { outline: 2px solid #8ad8df; }
+    .btn { padding: 10px 16px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: #3b82f6; color: #ffffff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: #374151; color: #f3f4f6; }
+    .btn-secondary:hover { background: #4b5563; }
+    .auth-error { margin-top: 10px; color: #f87171; font-size: 14px; }
+    .auth-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -24,9 +37,102 @@
     <h1>점령된 자료실</h1>
     <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
     <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
+
+    <section class="auth-card" id="auth-section">
+      <div id="unauthenticated-view">
+        <h2>로그인</h2>
+        <form id="login-form" class="auth-form">
+          <label>
+            이메일
+            <input type="email" id="email-input" required autocomplete="email" placeholder="user@example.com">
+          </label>
+          <label>
+            비밀번호
+            <input type="password" id="password-input" required autocomplete="current-password" placeholder="••••••••">
+          </label>
+          <button type="submit" class="btn btn-primary" id="login-btn">로그인</button>
+          <div id="auth-error" class="auth-error" role="alert" style="display: none;"></div>
+        </form>
+      </div>
+      <div id="authenticated-view" style="display: none;">
+        <div class="auth-status">
+          <div>
+            <strong>로그인 상태</strong>
+            <span id="user-display" style="color: #8ad8df;"></span>
+          </div>
+          <button type="button" class="btn btn-secondary" id="logout-btn">로그아웃</button>
+        </div>
+      </div>
+    </section>
+
     <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
   </main>
   <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const SUPABASE_URL = 'https://kanrdiuonebmjgfkzubq.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_tV5ZichiGCSj1T8lu3heGg_wCWGhEdI';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const unauthView = document.querySelector('#unauthenticated-view');
+    const authView = document.querySelector('#authenticated-view');
+    const loginForm = document.querySelector('#login-form');
+    const emailInput = document.querySelector('#email-input');
+    const passwordInput = document.querySelector('#password-input');
+    const authError = document.querySelector('#auth-error');
+    const userDisplay = document.querySelector('#user-display');
+    const logoutBtn = document.querySelector('#logout-btn');
+
+    function updateAuthState(session) {
+      if (session && session.user) {
+        unauthView.style.display = 'none';
+        authView.style.display = 'block';
+        userDisplay.textContent = `${session.user.email} 계정으로 로그인됨`;
+        authError.style.display = 'none';
+        authError.textContent = '';
+      } else {
+        authView.style.display = 'none';
+        unauthView.style.display = 'block';
+        userDisplay.textContent = '';
+      }
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authError.style.display = 'none';
+      authError.textContent = '';
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        authError.textContent = `로그인 실패: ${error.message}`;
+        authError.style.display = 'block';
+        return;
+      }
+
+      passwordInput.value = '';
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        alert(`로그아웃 오류: ${error.message}`);
+      }
+    });
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      updateAuthState(session);
+    });
+
+    const { data: { session } } = await supabase.auth.getSession();
+    updateAuthState(session);
+
     const list = document.querySelector('#notes');
     try {
       const response = await fetch('/api/notes', { cache: 'no-store' });
