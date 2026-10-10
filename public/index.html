@@ -83,17 +83,54 @@
     const userDisplay = document.querySelector('#user-display');
     const logoutBtn = document.querySelector('#logout-btn');
 
+    async function loadNotes(token) {
+      const list = document.querySelector('#notes');
+      if (!token) {
+        const item = document.createElement('li');
+        item.textContent = '로그인하지 않은 상태입니다. 자료를 보려면 로그인하세요.';
+        list.replaceChildren(item);
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/notes', {
+          cache: 'no-store',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!response.ok) throw new Error('자료를 읽을 수 없습니다 (인증 필요).');
+        const data = await response.json();
+        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        list.replaceChildren(...data.notes.map(note => {
+          const item = document.createElement('li');
+          const title = document.createElement('strong');
+          const content = document.createElement('span');
+          title.textContent = note.title;
+          content.textContent = note.content;
+          item.append(title, content);
+          return item;
+        }));
+      } catch (error) {
+        const item = document.createElement('li');
+        item.textContent = error.message;
+        list.replaceChildren(item);
+      }
+    }
+
     function updateAuthState(session) {
-      if (session && session.user) {
+      if (session && session.user && session.access_token) {
         unauthView.style.display = 'none';
         authView.style.display = 'block';
         userDisplay.textContent = `${session.user.email} 계정으로 로그인됨`;
         authError.style.display = 'none';
         authError.textContent = '';
+        loadNotes(session.access_token);
       } else {
         authView.style.display = 'none';
         unauthView.style.display = 'block';
         userDisplay.textContent = '';
+        loadNotes(null);
       }
     }
 
@@ -132,27 +169,6 @@
 
     const { data: { session } } = await supabase.auth.getSession();
     updateAuthState(session);
-
-    const list = document.querySelector('#notes');
-    try {
-      const response = await fetch('/api/notes', { cache: 'no-store' });
-      if (!response.ok) throw new Error('공개 자료를 읽을 수 없습니다.');
-      const data = await response.json();
-      if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-      list.replaceChildren(...data.notes.map(note => {
-        const item = document.createElement('li');
-        const title = document.createElement('strong');
-        const content = document.createElement('span');
-        title.textContent = note.title;
-        content.textContent = note.content;
-        item.append(title, content);
-        return item;
-      }));
-    } catch (error) {
-      const item = document.createElement('li');
-      item.textContent = error.message;
-      list.replaceChildren(item);
-    }
   </script>
 </body>
 </html>
