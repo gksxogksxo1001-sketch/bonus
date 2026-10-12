@@ -38,15 +38,21 @@
 
 ### 2. 과거 노출 및 남은 약점 기록
 - **과거 노출 미해소 안내**: 1단계 커밋 이력(Git history) 및 Vercel의 과거 배포 링크(Previous deployments)에는 과거에 작성된 가상 메모 문장이 남아 있으므로, 과거 노출 자체가 완전히 삭제되어 해소된 것은 아닙니다.
-- **공개 API의 남은 약점**: 3단계에서 인증이 추가되어 비로그인 접근은 차단되었으나, 아직 사용자 간 소유권 검증(권한 인가)은 구현되지 않아 다른 사용자의 메모를 수정하거나 삭제할 수 있는 허점이 남아 있습니다 (4단계에서 보완 예정).
 
-## 3단계 현재 작동 기능 및 다시 실행 방법
+## 4단계 현재 작동 기능 및 다시 실행 방법
 
 ### 현재 작동하는 기능
-1. **Supabase Auth 인증 연동**: 이메일/비밀번호 기반 로그인·로그아웃 화면 및 실패 원인 표시 UI가 동작합니다.
-2. **토큰 검증 및 비로그인 차단**: `src/verify-login.mjs` 검증기를 통해 `/api/notes`에 유효한 `Authorization: Bearer <token>`이 없으면 HTTP 401로 자료를 거부합니다.
-3. **가상 메모 CRUD API**: 로그인한 사용자의 토큰을 기반으로 메모 목록 조회(GET), 메모 추가(POST, owner_id 저장), 메모 수정(PUT), 메모 삭제(DELETE)가 정상 수행됩니다.
-4. **허용 경로 등록**: `aleph.config.json`의 `allowedRoutes`에 `["/api/notes", "/api/notes/:id"]`가 등록되어 있습니다.
+1. **API 레벨 소유권 검증 (BOLA/IDOR 방어)**:
+   - `GET /api/notes`: 로그인 사용자의 `owner_id`와 일치하는 본인 메모만 반환합니다.
+   - `GET /api/notes/:id`: 단건 조회 시 본인 메모가 아니면 HTTP 403 Forbidden으로 거부합니다.
+   - `POST /api/notes`: 클라이언트의 임의 `owner_id` 입력을 무시하고 검증된 토큰의 `userId`로 저장합니다.
+   - `PUT /api/notes/:id`: 기존 행의 소유자 확인 및 소유자 변경 시도(`payload.owner_id`)를 차단(403 거부)합니다.
+   - `DELETE /api/notes/:id`: 본인 소유의 메모만 삭제를 허용하고 타인 메모 삭제 시도는 403으로 거부합니다.
+2. **DB 레벨 RLS 및 최소 권한 통제**:
+   - `public.notes` 테이블의 기존 권한을 회수(`REVOKE ALL`)하고 `authenticated` 역할에만 최소 권한(SELECT, INSERT, UPDATE, DELETE)을 부여했습니다 (`anon` 역할은 권한 없음).
+   - 4개 RLS 정책(`notes_select_own`, `notes_insert_own`, `notes_update_own`, `notes_delete_own`)을 통해 `auth.uid() = owner_id` 조건으로 데이터베이스 차원에서 격리됩니다.
+3. **허용 경로 등록**:
+   - `aleph.config.json`의 `allowedRoutes`에 메서드를 명시한 실제 API 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`)가 등록되어 있습니다.
 
 ### 다시 실행하는 방법
 1. **로컬 빌드 및 패키지 검사**:
@@ -59,5 +65,6 @@
    npm run bundle
    ```
 3. **배포 환경 확인**:
-   - Vercel에 배포된 사이트에서 로그인 없이 접속 시 자료가 차단되는지 확인합니다.
-   - 테스트 계정으로 로그인 후 메모 추가, 수정, 삭제 및 로그아웃이 정상 동작하는지 확인합니다.
+   - Vercel 배포 사이트에서 A 계정으로 로그인 시 A의 메모만, B 계정으로 로그인 시 B의 메모만 표시되는지 확인합니다.
+   - 타인 메모의 ID로 수정/삭제/조회 요청 시 403 에러가 반환되는지 확인합니다.
+
