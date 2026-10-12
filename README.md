@@ -69,4 +69,24 @@
    - Vercel 배포 웹 화면에서 로그인 후 A의 메모 읽기, 추가, 수정, 삭제가 정상 수행되는지 확인합니다.
    - 원본 주소(`https://kanrdiuonebmjgfkzubq.supabase.co/rest/v1/notes`)로 직접 요청 시 차단되는지 확인합니다.
 
+## 보너스 xdr-01 (무차별 대입 탐지 및 대응) 현재 작동 기능 및 다시 실행 방법
+
+### 현재 작동하는 기능
+1. **무차별 대입 공격 패턴 정의 (`xdr/brute-force/patterns.json`)**:
+   - MITRE ATT&CK T1110 기반 패턴 정의(단일 주소 고빈도 실패, 다수 계정 대상 스프레이, 성공 없는 대량 실패 지속).
+2. **경보 자동 판정 모듈 (`xdr/brute-force/decide.mjs`)**:
+   - Wazuh 형태의 보안 경보를 분석하여 세 가지 조치(`block`, `alert`, `record`) 및 신뢰도(0.0~1.0), 판정 사유를 반환.
+   - 외부 I/O 없이 순수 자체 로직으로 격리 환경에서 실행 가능.
+3. **대응 및 차단 연계 모듈 (`xdr/brute-force/respond.mjs`)**:
+   - 판정 결과 중 차단 대상(`block`)을 추출하여 ZTNA 거부 규칙 형식으로 변환하고, 경보 및 차단 이력을 `xdr/alerts.log`에 기록.
+4. **XDR 실행 및 결과 생성 (`xdr/brute-force/result.json`)**:
+   - `brute-force.json` 픽스처(경보 28건) 대상 판정 수행 및 결과 파일 생성 (block: 10건, alert: 9건, record: 9건).
+
+### 다시 실행하는 방법
+```bash
+npm run xdr:run -- brute-force
+```
+- 실행 후 `xdr/brute-force/result.json`에서 판정 건수(`counts`)와 판정 목록(`decisions`)을 확인합니다.
+
+
 
