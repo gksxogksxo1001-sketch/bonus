@@ -91,12 +91,6 @@
     <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
   </main>
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-    const SUPABASE_URL = 'https://kanrdiuonebmjgfkzubq.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_tV5ZichiGCSj1T8lu3heGg_wCWGhEdI';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
     const unauthView = document.querySelector('#unauthenticated-view');
     const authView = document.querySelector('#authenticated-view');
     const loginForm = document.querySelector('#login-form');
@@ -227,25 +221,37 @@
       const email = emailInput.value.trim();
       const password = passwordInput.value;
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      try {
+        const res = await fetch('/api/notes?action=login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email, password })
+        });
 
-      if (error) {
-        authError.textContent = `로그인 실패: ${error.message}`;
+        const data = await res.json();
+        if (!res.ok) {
+          authError.textContent = `로그인 실패: ${data.error || '인증 실패'}`;
+          authError.style.display = 'block';
+          return;
+        }
+
+        sessionStorage.setItem('access_token', data.access_token);
+        sessionStorage.setItem('user_email', data.email);
+        updateAuthState({ access_token: data.access_token, user: { email: data.email } });
+      } catch (err) {
+        authError.textContent = `로그인 실패: ${err.message}`;
         authError.style.display = 'block';
-        return;
       }
 
       passwordInput.value = '';
     });
 
-    logoutBtn.addEventListener('click', async () => {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        alert(`로그아웃 오류: ${error.message}`);
-      }
+    logoutBtn.addEventListener('click', () => {
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('user_email');
+      updateAuthState(null);
     });
 
     addNoteForm.addEventListener('submit', async (e) => {
@@ -274,12 +280,14 @@
       }
     });
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      updateAuthState(session);
-    });
-
-    const { data: { session } } = await supabase.auth.getSession();
-    updateAuthState(session);
+    // 세션 복원
+    const savedToken = sessionStorage.getItem('access_token');
+    const savedEmail = sessionStorage.getItem('user_email');
+    if (savedToken && savedEmail) {
+      updateAuthState({ access_token: savedToken, user: { email: savedEmail } });
+    } else {
+      updateAuthState(null);
+    }
   </script>
 </body>
 </html>

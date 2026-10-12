@@ -26,6 +26,33 @@ export default async function handler(request, response) {
     return response.status(500).json({ error: 'Supabase environment variables are missing.' });
   }
 
+  // 화면 코드에서 Supabase 공개 키를 제거하기 위한 서버 로그인 처리 액션
+  const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const isLoginAction = request.method?.toUpperCase() === 'POST' && url.searchParams.get('action') === 'login';
+
+  if (isLoginAction) {
+    let payload = request.body;
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch { payload = {}; }
+    }
+    payload = payload || {};
+    const { email, password } = payload;
+    if (!email || !password) {
+      return response.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseSecretKey);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.session) {
+      return response.status(400).json({ error: error?.message || 'Invalid login credentials' });
+    }
+
+    return response.status(200).json({
+      access_token: data.session.access_token,
+      email: data.user?.email || email
+    });
+  }
+
   // 브라우저가 전달한 임의의 userId, role 등은 신뢰하지 않고 오직 Authorization 헤더 토큰만 검증
   const authorization = request.headers['authorization'] || request.headers['Authorization'];
   if (!authorization) {

@@ -52,6 +52,8 @@
 4. **설정 및 보안 헤더**:
    - `aleph.config.json`에 원본 자료 HTTPS 경로(`originalApiUrl`) 및 `allowedRoutes`가 등록되어 있습니다.
    - `vercel.json`에 `X-Content-Type-Options: nosniff` 보안 헤더가 설정되어 있습니다.
+5. **화면 코드 공개 키 제거 (100점 가점)**:
+   - 화면 코드(`public/index.html`)에서 `sb_publishable_...` 공개 키와 Supabase 클라이언트를 완전히 제거하고, 로그인까지 Vercel 서버 함수(`POST /api/notes?action=login`)를 통해 처리하도록 개선했습니다.
 
 ### 다시 실행하는 방법
 1. **로컬 빌드 및 패키지 검사**:
