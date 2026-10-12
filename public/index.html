@@ -230,9 +230,15 @@
           body: JSON.stringify({ email, password })
         });
 
-        const data = await res.json();
+        let data = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = { error: `서버 연결 오류 (상태 코드: ${res.status})` };
+        }
+
         if (!res.ok) {
-          authError.textContent = `로그인 실패: ${data.error || '인증 실패'}`;
+          authError.textContent = `로그인 실패: ${data.error || '이메일 또는 비밀번호를 확인해 주세요.'}`;
           authError.style.display = 'block';
           return;
         }
@@ -241,7 +247,7 @@
         sessionStorage.setItem('user_email', data.email);
         updateAuthState({ access_token: data.access_token, user: { email: data.email } });
       } catch (err) {
-        authError.textContent = `로그인 실패: ${err.message}`;
+        authError.textContent = `로그인 실패: ${err.message || '네트워크 오류가 발생했습니다.'}`;
         authError.style.display = 'block';
       }
 
