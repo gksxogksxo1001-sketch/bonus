@@ -87,4 +87,26 @@ SELECT
   has_table_privilege(role_name, 'public.notes', 'DELETE') AS can_delete
 FROM (VALUES ('anon'), ('authenticated')) AS roles(role_name);
 
+-- [5단계 학습용 SQL: 브라우저/외부 직접 접근 권한 전면 회수]
+-- 다른 테이블은 건드리지 않고 public.notes의 직접 권한만 모두 회수합니다.
+-- (Vercel 서버 함수는 service_role 키를 사용하므로 정상 동작 유지)
+REVOKE ALL ON TABLE public.notes FROM PUBLIC, anon, authenticated;
+
+-- [5단계 적용 후 권한 대조 쿼리: 두 역할 모두 모든 권한이 false(0건)여야 함]
+SELECT grantee, table_name, privilege_type
+FROM information_schema.role_table_grants
+WHERE table_schema = 'public'
+  AND table_name = 'notes'
+  AND grantee IN ('anon', 'authenticated')
+ORDER BY grantee, privilege_type;
+
+SELECT
+  role_name,
+  has_table_privilege(role_name, 'public.notes', 'SELECT') AS can_select,
+  has_table_privilege(role_name, 'public.notes', 'INSERT') AS can_insert,
+  has_table_privilege(role_name, 'public.notes', 'UPDATE') AS can_update,
+  has_table_privilege(role_name, 'public.notes', 'DELETE') AS can_delete
+FROM (VALUES ('anon'), ('authenticated')) AS roles(role_name);
+
+
 

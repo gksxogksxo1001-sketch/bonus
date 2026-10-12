@@ -39,20 +39,19 @@
 ### 2. 과거 노출 및 남은 약점 기록
 - **과거 노출 미해소 안내**: 1단계 커밋 이력(Git history) 및 Vercel의 과거 배포 링크(Previous deployments)에는 과거에 작성된 가상 메모 문장이 남아 있으므로, 과거 노출 자체가 완전히 삭제되어 해소된 것은 아닙니다.
 
-## 4단계 현재 작동 기능 및 다시 실행 방법
+## 5단계 현재 작동 기능 및 다시 실행 방법
 
 ### 현재 작동하는 기능
-1. **API 레벨 소유권 검증 (BOLA/IDOR 방어)**:
-   - `GET /api/notes`: 로그인 사용자의 `owner_id`와 일치하는 본인 메모만 반환합니다.
-   - `GET /api/notes/:id`: 단건 조회 시 본인 메모가 아니면 HTTP 403 Forbidden으로 거부합니다.
-   - `POST /api/notes`: 클라이언트의 임의 `owner_id` 입력을 무시하고 검증된 토큰의 `userId`로 저장합니다.
-   - `PUT /api/notes/:id`: 기존 행의 소유자 확인 및 소유자 변경 시도(`payload.owner_id`)를 차단(403 거부)합니다.
-   - `DELETE /api/notes/:id`: 본인 소유의 메모만 삭제를 허용하고 타인 메모 삭제 시도는 403으로 거부합니다.
-2. **DB 레벨 RLS 및 최소 권한 통제**:
-   - `public.notes` 테이블의 기존 권한을 회수(`REVOKE ALL`)하고 `authenticated` 역할에만 최소 권한(SELECT, INSERT, UPDATE, DELETE)을 부여했습니다 (`anon` 역할은 권한 없음).
-   - 4개 RLS 정책(`notes_select_own`, `notes_insert_own`, `notes_update_own`, `notes_delete_own`)을 통해 `auth.uid() = owner_id` 조건으로 데이터베이스 차원에서 격리됩니다.
-3. **허용 경로 등록**:
-   - `aleph.config.json`의 `allowedRoutes`에 메서드를 명시한 실제 API 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`)가 등록되어 있습니다.
+1. **서버 함수 단일 진입점 구성**:
+   - 브라우저의 메모 읽기·추가·수정·삭제는 Supabase를 직접 호출하지 않고 오직 Vercel 서버 함수(`/api/notes`, `/api/notes/:id`)를 통해서만 수행됩니다.
+   - 서버 함수는 `SUPABASE_SECRET_KEY`(`service_role` 키)를 사용하여 안전하게 DB와 통신합니다.
+2. **저장소 직접 접근 권한 전면 차단**:
+   - `public.notes` 테이블의 `PUBLIC`, `anon`, `authenticated` 직접 권한을 모두 회수(`REVOKE ALL`)하여, 브라우저 토큰이나 공개 anon 키로 Supabase PostgREST Data API에 직접 접근하는 경로를 차단했습니다.
+3. **API 레벨 소유자 검증 및 RLS 유지**:
+   - 로그인 토큰의 `userId`와 DB의 `owner_id`를 대조하여 본인 메모만 CRUD가 가능하며, 타인 메모 접근 및 소유권 변경 시도는 403 Forbidden으로 거부됩니다.
+4. **설정 및 보안 헤더**:
+   - `aleph.config.json`에 원본 자료 HTTPS 경로(`originalApiUrl`) 및 `allowedRoutes`가 등록되어 있습니다.
+   - `vercel.json`에 `X-Content-Type-Options: nosniff` 보안 헤더가 설정되어 있습니다.
 
 ### 다시 실행하는 방법
 1. **로컬 빌드 및 패키지 검사**:
@@ -65,6 +64,7 @@
    npm run bundle
    ```
 3. **배포 환경 확인**:
-   - Vercel 배포 사이트에서 A 계정으로 로그인 시 A의 메모만, B 계정으로 로그인 시 B의 메모만 표시되는지 확인합니다.
-   - 타인 메모의 ID로 수정/삭제/조회 요청 시 403 에러가 반환되는지 확인합니다.
+   - Vercel 배포 웹 화면에서 로그인 후 A의 메모 읽기, 추가, 수정, 삭제가 정상 수행되는지 확인합니다.
+   - 원본 주소(`https://kanrdiuonebmjgfkzubq.supabase.co/rest/v1/notes`)로 직접 요청 시 차단되는지 확인합니다.
+
 
